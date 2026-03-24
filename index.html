@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>महाराष्ट्र दस्तावेज़ एजंट</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1a0c;font-family:'Noto Sans Devanagari',serif;overflow-x:hidden}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2b4229;border-radius:4px}
+textarea::placeholder,input::placeholder{color:#3a5a38}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useEffect}=React;
+
+const F="'Noto Serif Devanagari','Noto Sans Devanagari',serif";
+const T={
+  bg:"#0d1a0c",surf:"#172515",surf2:"#1e2f1c",bdr:"#2b4229",
+  gold:"#c9a84c",goldL:"#e8c96d",goldD:"#c9a84c18",
+  cream:"#f0ebe0",dim:"#f0ebe055",dim2:"#f0ebe022",
+  inp:"#0a1208",red:"#5c2828",redL:"#ffbbbb",green:"#1e4a1c"
+};
+
+// ── API ──────────────────────────────────────────────────────────
+const claude=async(system,userText,images=[],maxTokens=4000)=>{
+  const content=[];
+  for(const img of images)
+    content.push({type:"image",source:{type:"base64",media_type:img.mime,data:img.b64}});
+  content.push({type:"text",text:userText});
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:maxTokens,system,messages:[{role:"user",content}]})
+  });
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message);
+  return d.content[0].text;
+};
+const toB64=f=>new Promise((res,rej)=>{
+  const r=new FileReader();
+  r.onload=()=>res({b64:r.result.split(",")[1],mime:f.type});
+  r.onerror=rej;r.readAsDataURL(f);
+});
+
+// ── DATA ─────────────────────────────────────────────────────────
+const CATS=[
+  {id:"sale",  emoji:"🤝",label:"विक्री करारनामा",  sub:"Sale Agreement"},
+  {id:"rent",  emoji:"🏠",label:"भाडेपट्टी करार",   sub:"Rent / Leave & License"},
+  {id:"affidavit",emoji:"⚖️",label:"शपथपत्र",       sub:"Affidavit"},
+];
+const SUBS={
+  sale:[
+    {id:"vehicle",label:"🚗 वाहन विक्री करारनामा",    law:"Motor Vehicles Act 1988 • Maharashtra Stamp Act 2019"},
+    {id:"land",  label:"🌾 जमीन / मालमत्ता विक्री",   law:"Transfer of Property Act • Registration Act 1908"},
+    {id:"shop",  label:"🏪 दुकान / व्यवसाय विक्री",   law:"Maharashtra Stamp Act 2019 • Contract Act"},
+    {id:"goods", label:"📦 वस्तू / साहित्य विक्री",   law:"Sale of Goods Act 1930"},
+  ],
+  rent:[
+    {id:"residential",  label:"🏠 निवासी Leave & License", law:"Maharashtra Rent Control Act 1999"},
+    {id:"commercial",   label:"🏢 व्यावसायिक भाडेपट्टी",  law:"Maharashtra Rent Control Act 1999"},
+    {id:"agricultural", label:"🌾 शेती / कूळ भाडेपट्टी",  law:"Maharashtra Tenancy & Agricultural Lands Act"},
+  ],
+  affidavit:[
+    {id:"name_change",label:"✏️ नाव बदल"},
+    {id:"address",    label:"🏠 पत्ता पुरावा"},
+    {id:"income",     label:"💰 उत्पन्न प्रमाण"},
+    {id:"age",        label:"📅 वय पुरावा"},
+    {id:"unmarried",  label:"💍 अविवाहित / विधवा / विधुर"},
+    {id:"legal_heir", label:"👨‍👩‍👧 कायदेशीर वारस"},
+    {id:"lost_doc",   label:"🔍 कागदपत्र हरवणे"},
+    {id:"domicile",   label:"📍 अधिवास / रहिवास प्रमाण"},
+    {id:"caste",      label:"📜 जात / धर्म घोषणापत्र"},
+    {id:"noc",        label:"✅ ना-हरकत शपथपत्र"},
+    {id:"financial",  label:"🏦 आर्थिक / कर्ज शपथपत्र"},
+    {id:"property",   label:"🏡 मालमत्ता घोषणापत्र"},
+    {id:"other",      label:"📄 इतर विषय..."},
+  ],
+};
+const SCAN_DOCS=[
+  {id:"aadh_p1",emoji:"🪪",label:"आधार कार्ड — पक्ष १",hint:"विक्रेता / भाडेकरू / शपथकर्ता"},
+  {id:"aadh_p2",emoji:"🪪",label:"आधार कार्ड — पक्ष २",hint:"खरेदीदार / भाडेदार"},
+  {id:"pan_p1", emoji:"💳",label:"PAN कार्ड — पक्ष १",hint:""},
+  {id:"pan_p2", emoji:"💳",label:"PAN कार्ड — पक्ष २",hint:""},
+  {id:"rc",     emoji:"🚗",label:"RC Book (वाहन नोंदणी)",hint:"Vehicle Registration Certificate"},
+  {id:"doc712", emoji:"📋",label:"७/१२ उतारा / प्रॉपर्टी कार्ड",hint:""},
+  {id:"ration", emoji:"🗂️",label:"रेशन कार्ड",hint:""},
+  {id:"other_d",emoji:"📄",label:"इतर कागद",hint:"कोणतेही महत्त्वाचे कागद"},
+];
+const FIELD_LABELS={
+  p1_naam_hi:"पक्ष १ — नाव",p1_father_naam:"पक्ष १ — वडील/पतीचे नाव",
+  p1_age:"पक्ष १ — वय",p1_dob:"पक्ष १ — जन्मतारीख",p1_gender:"पक्ष १ — लिंग",
+  p1_aadhaar_no:"पक्ष १ — आधार क्र.",p1_pan_no:"पक्ष १ — PAN",
+  p1_address_full:"पक्ष १ — पूर्ण पत्ता",p1_village:"पक्ष १ — गाव",
+  p1_taluka:"पक्ष १ — तालुका",p1_jila:"पक्ष १ — जिल्हा",p1_pincode:"पक्ष १ — पिनकोड",
+  p2_naam_hi:"पक्ष २ — नाव",p2_father_naam:"पक्ष २ — वडील/पतीचे नाव",
+  p2_age:"पक्ष २ — वय",p2_dob:"पक्ष २ — जन्मतारीख",
+  p2_aadhaar_no:"पक्ष २ — आधार क्र.",p2_pan_no:"पक्ष २ — PAN",
+  p2_address_full:"पक्ष २ — पूर्ण पत्ता",p2_village:"पक्ष २ — गाव",
+  p2_taluka:"पक्ष २ — तालुका",p2_jila:"पक्ष २ — जिल्हा",p2_pincode:"पक्ष २ — पिनकोड",
+  v_vehicle_no:"वाहन नोंदणी क्र.",v_vehicle_make_model:"वाहन प्रकार/मॉडेल",
+  v_vehicle_year:"वाहन वर्ष",v_engine_no:"इंजिन क्र.",v_chassis_no:"चेसिस क्र.",
+  prop_survey_no:"सर्व्हे/गट क्र.",prop_area_hectare:"क्षेत्र (हेक्टर)",
+  prop_area_guntha:"क्षेत्र (गुंठे)",prop_mauza:"मौजा/गाव",
+  prop_taluka:"तालुका",prop_jila:"जिल्हा",prop_malik_naam:"मूळ मालकाचे नाव",
+  amount:"रक्कम — अंकात (₹)",amount_words:"रक्कम — शब्दात",
+  rent_amount:"मासिक भाडे (₹)",deposit_amount:"डिपॉझिट (₹)",
+  duration:"कालावधी",place:"करार स्थान / जिल्हा",
+};
+const FIELD_GROUPS={
+  sale:{
+    "पक्ष १ (विक्रेता)":["p1_naam_hi","p1_father_naam","p1_age","p1_dob","p1_aadhaar_no","p1_pan_no","p1_address_full","p1_village","p1_taluka","p1_jila","p1_pincode"],
+    "पक्ष २ (खरेदीदार)":["p2_naam_hi","p2_father_naam","p2_age","p2_dob","p2_aadhaar_no","p2_pan_no","p2_address_full","p2_village","p2_taluka","p2_jila","p2_pincode"],
+    "वाहन / मालमत्ता":["v_vehicle_no","v_vehicle_make_model","v_vehicle_year","v_engine_no","v_chassis_no","prop_survey_no","prop_area_hectare","prop_area_guntha","prop_mauza","prop_taluka","prop_jila"],
+    "व्यवहाराचे तपशील":["amount","amount_words","place"],
+  },
+  rent:{
+    "मालक (Licensor)":["p1_naam_hi","p1_father_naam","p1_age","p1_aadhaar_no","p1_pan_no","p1_address_full","p1_village","p1_taluka","p1_jila"],
+    "भाडेकरू (Licensee)":["p2_naam_hi","p2_father_naam","p2_age","p2_aadhaar_no","p2_pan_no","p2_address_full","p2_village","p2_taluka","p2_jila"],
+    "मालमत्ता":["prop_survey_no","prop_mauza","prop_taluka","prop_jila"],
+    "भाडे तपशील":["rent_amount","deposit_amount","duration","place"],
+  },
+  affidavit:{
+    "शपथकर्ता":["p1_naam_hi","p1_father_naam","p1_age","p1_dob","p1_gender","p1_aadhaar_no","p1_pan_no","p1_address_full","p1_village","p1_taluka","p1_jila","p1_pincode"],
+    "इतर":["place"],
+  },
+};
+
+const LAWS={
+  vehicle:"Motor Vehicles Act 1988 sec 50, Maharashtra Stamp Act 2019 Art 5(g-a), RTO Form 29/30",
+  land:"Transfer of Property Act 1882, Registration Act 1908, Maharashtra Stamp Act 2019",
+  shop:"Maharashtra Stamp Act 2019, Indian Contract Act 1872",
+  goods:"Sale of Goods Act 1930, Indian Contract Act 1872",
+  residential:"Maharashtra Rent Control Act 1999, Leave & License Agreement norms",
+  commercial:"Maharashtra Rent Control Act 1999, Maharashtra Shops & Establishment Act",
+  agricultural:"Maharashtra Tenancy & Agricultural Lands Act 1948",
+  name_change:"Notary Act 1952, Indian Evidence Act sec 45",
+  address:"Notary Act 1952, Indian Evidence Act",
+  income:"Notary Act 1952",age:"Notary Act 1952",
+  unmarried:"Notary Act 1952, Indian Evidence Act",
+  legal_heir:"Hindu Succession Act 1956, Indian Succession Act 1925",
+  lost_doc:"Notary Act 1952, FIR procedure",
+  domicile:"Maharashtra State Domicile Certificate Rules",
+  caste:"Maharashtra Scheduled Castes Rules",
+  noc:"Indian Contract Act, Notary Act 1952",
+  financial:"Notary Act 1952, SARFAESI Act",
+  property:"Notary Act 1952, Transfer of Property Act",
+  other:"Notary Act 1952, Indian Evidence Act",
+};
+
+const VISION_SYS=`You are a precision document data extractor for Indian legal documents.
+Extract ALL visible text from the image carefully and return ONLY a valid JSON object — no markdown, no explanation, no extra text.
+Use these exact keys (empty string "" if not found):
+{"naam_hi":"","naam_en":"","aadhaar_no":"","pan_no":"","dob":"","age":"","gender":"",
+"father_naam":"","mother_naam":"","spouse_naam":"","address_full":"","pincode":"",
+"village":"","taluka":"","jila":"","state":"",
+"vehicle_no":"","vehicle_make_model":"","vehicle_year":"","engine_no":"","chassis_no":"",
+"survey_no":"","gat_no":"","area_hectare":"","area_guntha":"","mauza":"","malik_naam":"",
+"khata_no":"","ration_no":"","extra":""}`;
+
+const docSys=(cat,stype)=>`You are a senior Maharashtra legal document expert and advocate.
+Write complete, enforceable legal documents in formal Marathi (Devanagari script).
+Applicable laws: ${LAWS[stype]||"Notary Act 1952, Indian Contract Act 1872"}
+
+STRICT RULES:
+1. Begin DIRECTLY with document title — no intro or explanation from you
+2. Write entirely in formal legal Marathi throughout
+3. Include ALL mandatory clauses for this document type valid in Maharashtra courts
+4. Signature blanks: __________________________
+5. Date blanks: दिनांक: ________ / ________ / 20____
+6. Include proper साक्षीदार (witness) section at end
+7. For affidavits: include proper oath text per Notary Act 1952
+8. For agreements: include penalty/dispute clause, jurisdiction (Maharashtra courts), stamp duty clause
+9. Document must be print-ready, professional, complete, legally sound
+10. After signature block add: [नोटरी / सक्षम अधिकारी यांचा शिक्का व सही]`;
+
+// ── SHARED COMPONENTS ────────────────────────────────────────────
+const Btn=({children,onClick,sec,sm,disabled,style:sx={}})=>(
+  <button onClick={onClick} disabled={disabled} style={{
+    padding:sm?"6px 12px":"10px 22px",fontSize:sm?"11px":"14px",
+    background:disabled?"#1a2e18":sec?"transparent":T.gold,
+    color:disabled?"#3a5a38":sec?T.gold:"#111",
+    border:sec?`1px solid ${T.gold}`:"none",
+    borderRadius:"8px",cursor:disabled?"default":"pointer",
+    fontFamily:F,fontWeight:700,transition:"all .2s",...sx
+  }}>{children}</button>
+);
+const Card=({children,onClick,active,style:sx={}})=>(
+  <div onClick={onClick} style={{
+    background:active?T.surf2:T.surf,
+    border:`1.5px solid ${active?T.gold:T.bdr}`,
+    borderRadius:"12px",padding:"16px 14px",
+    cursor:onClick?"pointer":"default",transition:"all .2s",...sx
+  }}
+  onMouseEnter={e=>{if(onClick){e.currentTarget.style.borderColor=T.gold;e.currentTarget.style.background=T.surf2}}}
+  onMouseLeave={e=>{if(onClick&&!active){e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.background=T.surf}}}
+  >{children}</div>
+);
+const Inp=({value,onChange,placeholder,multiline,style:sx={}})=>{
+  const base={padding:"9px 12px",background:T.inp,border:`1px solid ${T.bdr}`,
+    borderRadius:"8px",color:T.cream,fontFamily:F,fontSize:"13px",
+    width:"100%",outline:"none",...sx};
+  return multiline
+    ?<textarea value={value} onChange={onChange} placeholder={placeholder} style={{...base,resize:"vertical",minHeight:"64px"}}/>
+    :<input value={value} onChange={onChange} placeholder={placeholder} style={base}/>;
+};
+const Lbl=({children})=>(
+  <div style={{color:T.gold+"99",fontSize:"10px",marginBottom:"4px",letterSpacing:".5px"}}>{children}</div>
+);
+const Tag=({children})=>(
+  <span style={{background:T.goldD,color:T.gold,padding:"3px 10px",borderRadius:"20px",fontSize:"11px"}}>{children}</span>
+);
+
+// ── MAIN APP ─────────────────────────────────────────────────────
+function App(){
+  const [step,setStep]=useState("home");
+  const [cat,setCat]=useState(null);
+  const [stype,setStype]=useState(null);
+  const [otherTopic,setOtherTopic]=useState("");
+  const [scanned,setScanned]=useState([]);
+  const [flds,setFlds]=useState({});
+  const [clauses,setClauses]=useState([]);
+  const [newC,setNewC]=useState("");
+  const [docTxt,setDocTxt]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [loadMsg,setLoadMsg]=useState("");
+  const [scanId,setScanId]=useState(null);
+  const [err,setErr]=useState("");
+  const fileRefs=useRef({});
+
+  const mergeScanned=arr=>{
+    const m={};
+    for(const s of arr){
+      const pfx=s.id.includes("p2")?"p2_":s.id==="rc"?"v_":s.id==="doc712"?"prop_":"p1_";
+      for(const [k,v] of Object.entries(s.fields||{}))
+        if(v&&k!=="extra") m[pfx+k]=v;
+    }
+    return m;
+  };
+
+  const doScan=async(sdoc,file)=>{
+    setScanId(sdoc.id);setErr("");
+    try{
+      const img=await toB64(file);
+      const preview=URL.createObjectURL(file);
+      const raw=await claude(VISION_SYS,`Document: ${sdoc.label}. Extract carefully.`,[img],1200);
+      let fields={};
+      try{fields=JSON.parse(raw.replace(/```json|```/g,"").trim());}
+      catch{fields={extra:raw};}
+      const upd=[...scanned.filter(s=>s.id!==sdoc.id),
+        {id:sdoc.id,label:sdoc.label,emoji:sdoc.emoji,fields,preview}];
+      setScanned(upd);
+      setFlds(prev=>({...prev,...mergeScanned(upd)}));
+    }catch(e){setErr("स्कॅन अयशस्वी: "+e.message);}
+    setScanId(null);
+  };
+
+  const generate=async()=>{
+    setLoading(true);setErr("");
+    setLoadMsg("दस्तावेज़ तयार होत आहे... १०-१५ सेकंद प्रतीक्षा करा...");
+    try{
+      const fText=Object.entries(flds).filter(([,v])=>v)
+        .map(([k,v])=>`${FIELD_LABELS[k]||k}: ${v}`).join("\n");
+      const clauseTxt=clauses.length
+        ?"\nक्लायंटच्या विशेष अटी:\n"+clauses.map((c,i)=>`${i+1}. ${c}`).join("\n"):"";
+      const subObj=(SUBS[cat]||[]).find(s=>s.id===stype);
+      const subLabel=stype==="other"?otherTopic:(subObj?.label||stype);
+      const prompt=`दस्तावेज़ प्रकार: ${CATS.find(c=>c.id===cat)?.label} — ${subLabel}
+
+पक्ष / मालमत्ता माहिती:
+${fText||"(माहिती उपलब्ध नाही — रिकाम्या जागा __________ सोडाव्यात)"}
+${clauseTxt}
+
+संपूर्ण, सही करण्यास तयार, कायदेशीर दस्तावेज़ लिहा. महाराष्ट्र न्यायालयात वैध असावे.`;
+      const result=await claude(docSys(cat,stype),prompt,[],4000);
+      setDocTxt(result);setStep("preview");
+    }catch(e){setErr("चूक: "+e.message);}
+    setLoading(false);
+  };
+
+  const printDoc=()=>{
+    const catLabel=CATS.find(c=>c.id===cat)?.label||"दस्तावेज़";
+    const win=window.open("","_blank");
+    win.document.write(`<!DOCTYPE html><html lang="mr"><head>
+<meta charset="UTF-8"><title>${catLabel}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8e2d4;font-family:'Noto Serif Devanagari',serif}
+.bar{padding:12px 20px;background:#fff;border-bottom:1px solid #ccc;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar button{padding:8px 20px;font-size:13pt;cursor:pointer;border:none;border-radius:6px;font-family:inherit;font-weight:600}
+.pb{background:#c9a84c;color:#111}
+.cb{background:#eee;color:#444}
+.info{font-size:10pt;color:#666;flex:1}
+.page{
+  width:21cm;min-height:29.7cm;margin:10px auto;background:white;
+  padding-top:18.5cm;padding-left:2.5cm;padding-right:1.5cm;padding-bottom:1.27cm;
+}
+.doc{font-size:12.5pt;line-height:2.2;color:#111;white-space:pre-wrap;text-align:justify}
+@media print{
+  body{background:white}
+  .bar{display:none}
+  .page{margin:0;width:100%;border:none}
+  @page{size:A4;margin:0}
+}
+</style>
+</head><body>
+<div class="bar">
+  <button class="pb" onclick="window.print()">🖨️ प्रिंट करा — A4 स्टांप पेपर</button>
+  <button class="cb" onclick="window.close()">✕ बंद</button>
+  <div class="info">⚠️ Printer: Margins=None • Scale=100% • Headers/Footers=Off</div>
+</div>
+<div class="page"><div class="doc">${docTxt.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div></div>
+</body></html>`);
+    win.document.close();
+  };
+
+  const ErrBox=()=>err?<div style={{background:T.red,color:T.redL,padding:"10px 14px",borderRadius:"8px",margin:"8px 0",fontSize:"12px"}}>⚠️ {err}</div>:null;
+
+  // ── HOME ────────────────────────────────────────────────────────
+  if(step==="home")return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:F,animation:"fadeIn .5s ease"}}>
+      <div style={{fontSize:"52px",marginBottom:"10px"}}>⚖️</div>
+      <h1 style={{color:T.gold,fontSize:"22px",fontWeight:700,margin:"0 0 6px",textAlign:"center",fontFamily:F}}>महाराष्ट्र दस्तावेज़ एजंट</h1>
+      <p style={{color:T.dim,fontSize:"12px",marginBottom:"16px",textAlign:"center"}}>Vision Scanner • AI Writer • Stamp Paper Format</p>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",justifyContent:"center",marginBottom:"28px"}}>
+        {["📷 आधार/PAN स्कॅन","🤖 AI दस्तावेज़","⚖️ महाराष्ट्र कायदा","🖨️ प्रिंट-रेडी"].map(t=><Tag key={t}>{t}</Tag>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"14px",maxWidth:"480px",width:"100%"}}>
+        {CATS.map(c=>(
+          <Card key={c.id} onClick={()=>{setCat(c.id);setStep("subtype");}}>
+            <div style={{fontSize:"32px",textAlign:"center",marginBottom:"8px"}}>{c.emoji}</div>
+            <div style={{color:T.gold,fontWeight:600,fontSize:"13px",textAlign:"center",lineHeight:1.4}}>{c.label}</div>
+            <div style={{color:T.dim,fontSize:"10px",textAlign:"center",marginTop:"4px"}}>{c.sub}</div>
+          </Card>
+        ))}
+      </div>
+      <p style={{color:T.dim2,fontSize:"10px",marginTop:"28px",textAlign:"center",maxWidth:"360px",lineHeight:1.7}}>
+        आधार, PAN, RC Book, ७/१२ स्कॅन करा → AI दस्तावेज़ तयार करतो → स्टांप पेपरवर प्रिंट
+      </p>
+    </div>
+  );
+
+  // ── SUBTYPE ─────────────────────────────────────────────────────
+  if(step==="subtype")return(
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:F,color:T.cream}}>
+      <div style={{background:T.surf,borderBottom:`1px solid ${T.bdr}`,padding:"12px 16px",display:"flex",gap:"10px",alignItems:"center"}}>
+        <Btn sec sm onClick={()=>setStep("home")}>← मागे</Btn>
+        <div>
+          <div style={{color:T.gold,fontWeight:600,fontSize:"15px"}}>{CATS.find(c=>c.id===cat)?.label}</div>
+          <div style={{color:T.dim,fontSize:"11px"}}>दस्तावेज़ प्रकार निवडा</div>
+        </div>
+      </div>
+      <div style={{maxWidth:"560px",margin:"0 auto",padding:"20px 16px",display:"flex",flexDirection:"column",gap:"10px"}}>
+        {(SUBS[cat]||[]).map(s=>(
+          <Card key={s.id} onClick={()=>{setStype(s.id);if(s.id!=="other")setStep("scan");}}>
+            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+              <div style={{flex:1,fontSize:"15px",color:T.cream}}>{s.label}</div>
+              {s.law&&<div style={{fontSize:"9px",color:T.gold+"66",maxWidth:"140px",textAlign:"right",lineHeight:1.5}}>{s.law}</div>}
+              <div style={{color:T.gold,fontSize:"18px"}}>›</div>
+            </div>
+          </Card>
+        ))}
+        {stype==="other"&&(
+          <div style={{padding:"14px",background:T.surf,border:`1px solid ${T.bdr}`,borderRadius:"12px"}}>
+            <Lbl>शपथपत्राचा विषय लिहा:</Lbl>
+            <Inp value={otherTopic} onChange={e=>setOtherTopic(e.target.value)} placeholder="उदा: मालमत्ता हस्तांतरण, बँक खाते..."/>
+            <div style={{marginTop:"10px"}}><Btn onClick={()=>setStep("scan")} disabled={!otherTopic.trim()}>पुढे →</Btn></div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── SCAN ────────────────────────────────────────────────────────
+  if(step==="scan")return(
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:F,color:T.cream}}>
+      <div style={{background:T.surf,borderBottom:`1px solid ${T.bdr}`,padding:"12px 16px",display:"flex",gap:"10px",alignItems:"center"}}>
+        <Btn sec sm onClick={()=>setStep("subtype")}>← मागे</Btn>
+        <div style={{flex:1}}>
+          <div style={{color:T.gold,fontWeight:600,fontSize:"14px"}}>📷 कागदपत्रे स्कॅन करा</div>
+          <div style={{color:T.dim,fontSize:"11px"}}>फोटो काढा — AI माहिती आपोआप काढेल</div>
+        </div>
+        <Btn onClick={()=>setStep("fields")} style={{padding:"8px 14px",fontSize:"12px"}}>पुढे →</Btn>
+      </div>
+      <div style={{maxWidth:"580px",margin:"0 auto",padding:"14px 14px"}}>
+        <ErrBox/>
+        <div style={{background:T.goldD,border:`1px solid ${T.gold}33`,borderRadius:"10px",padding:"10px 14px",marginBottom:"14px",fontSize:"12px",color:T.cream+"bb",lineHeight:1.8}}>
+          📸 <b style={{color:T.gold}}>📷 स्कॅन</b> बटण दाबा → फोटो काढा → AI माहिती काढेल &nbsp;|&nbsp; स्कॅन न करताही <b style={{color:T.gold}}>पुढे</b> जाता येते
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"20px"}}>
+          {SCAN_DOCS.map(sd=>{
+            const done=scanned.find(s=>s.id===sd.id);
+            const isScanning=scanId===sd.id;
+            const fc=done?Object.values(done.fields||{}).filter(v=>v&&v!=="").length:0;
+            return(
+              <div key={sd.id} style={{
+                background:done?T.surf2:T.surf,
+                border:`1.5px solid ${done?T.gold:T.bdr}`,
+                borderRadius:"12px",padding:"10px 12px",
+                display:"flex",alignItems:"center",gap:"10px"
+              }}>
+                {done
+                  ?<img src={done.preview} style={{width:"44px",height:"44px",borderRadius:"6px",objectFit:"cover",flexShrink:0}}/>
+                  :<div style={{width:"44px",height:"44px",borderRadius:"6px",background:T.inp,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"22px",flexShrink:0}}>{sd.emoji}</div>
+                }
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:"13px",color:done?T.gold:T.cream,fontWeight:done?600:400}}>{sd.label}</div>
+                  {done&&<div style={{fontSize:"10px",color:"#7fc97f",marginTop:"2px"}}>✓ {fc} माहिती मिळाली</div>}
+                  {!done&&sd.hint&&<div style={{fontSize:"10px",color:T.dim}}>{sd.hint}</div>}
+                </div>
+                <div style={{flexShrink:0}}>
+                  {isScanning
+                    ?<div style={{color:T.gold,fontSize:"11px",minWidth:"72px",textAlign:"center",animation:"pulse 1s infinite"}}>⏳ स्कॅन...</div>
+                    :<>
+                      <input type="file" accept="image/*" capture="environment"
+                        ref={el=>fileRefs.current[sd.id]=el}
+                        style={{display:"none"}}
+                        onChange={e=>{if(e.target.files[0])doScan(sd,e.target.files[0]);e.target.value="";}}
+                      />
+                      <Btn sm onClick={()=>fileRefs.current[sd.id]?.click()}
+                        style={{background:done?T.surf:T.gold,color:done?T.cream:"#111",border:done?`1px solid ${T.bdr}`:"none"}}>
+                        {done?"🔄":"📷"} {done?"बदला":"स्कॅन"}
+                      </Btn>
+                    </>
+                  }
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{textAlign:"center",paddingBottom:"30px"}}>
+          <Btn onClick={()=>setStep("fields")} style={{padding:"12px 32px",fontSize:"14px"}}>
+            माहिती तपासा → {scanned.length>0?`(${scanned.length} स्कॅन केले)`:""}
+          </Btn>
+          <div style={{color:T.dim,fontSize:"11px",marginTop:"8px"}}>स्कॅन न करताही पुढे जाता येते — माहिती हाताने भरता येते</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── FIELDS ──────────────────────────────────────────────────────
+  if(step==="fields"){
+    const groups=FIELD_GROUPS[cat]||FIELD_GROUPS.affidavit;
+    const allGroupKeys=Object.values(groups).flat();
+    const extraKeys=Object.keys(flds).filter(k=>!allGroupKeys.includes(k)&&flds[k]);
+    return(
+      <div style={{minHeight:"100vh",background:T.bg,fontFamily:F,color:T.cream}}>
+        <div style={{background:T.surf,borderBottom:`1px solid ${T.bdr}`,padding:"12px 16px",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:10}}>
+          <Btn sec sm onClick={()=>setStep("scan")}>← मागे</Btn>
+          <div style={{flex:1}}>
+            <div style={{color:T.gold,fontWeight:600,fontSize:"14px"}}>माहिती तपासा व अटी जोडा</div>
+            <div style={{color:T.dim,fontSize:"11px"}}>स्कॅन केलेली माहिती बदलता येते</div>
+          </div>
+          <Btn onClick={generate} disabled={loading} style={{padding:"8px 18px",fontSize:"12px"}}>
+            {loading?"⏳ तयार...":"⚡ दस्तावेज़ तयार करा"}
+          </Btn>
+        </div>
+        <div style={{maxWidth:"680px",margin:"0 auto",padding:"16px"}}>
+          <ErrBox/>
+          {Object.entries(groups).map(([grpLabel,keys])=>(
+            <div key={grpLabel} style={{marginBottom:"20px"}}>
+              <div style={{color:T.gold,fontSize:"12px",fontWeight:600,marginBottom:"10px",
+                padding:"5px 12px",background:T.goldD,borderRadius:"6px",display:"inline-block"}}>
+                {grpLabel}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                {keys.map(k=>(
+                  <div key={k}>
+                    <Lbl>{FIELD_LABELS[k]||k}</Lbl>
+                    <Inp value={flds[k]||""} onChange={e=>setFlds({...flds,[k]:e.target.value})} placeholder={FIELD_LABELS[k]||k}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {extraKeys.length>0&&(
+            <div style={{marginBottom:"20px"}}>
+              <div style={{color:T.gold,fontSize:"12px",fontWeight:600,marginBottom:"10px",
+                padding:"5px 12px",background:T.goldD,borderRadius:"6px",display:"inline-block"}}>
+                स्कॅनमधील इतर माहिती
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+                {extraKeys.map(k=>(
+                  <div key={k}>
+                    <Lbl>{k}</Lbl>
+                    <Inp value={flds[k]||""} onChange={e=>setFlds({...flds,[k]:e.target.value})} placeholder={k}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Custom Clauses */}
+          <div style={{background:T.surf,border:`1px solid ${T.bdr}`,borderRadius:"12px",padding:"16px",marginBottom:"20px"}}>
+            <div style={{color:T.gold,fontWeight:600,fontSize:"13px",marginBottom:"4px"}}>📌 विशेष अटी — क्लायंटनुसार</div>
+            <div style={{color:T.dim,fontSize:"11px",marginBottom:"12px"}}>या अटी AI दस्तावेज़ात योग्य ठिकाणी जोडेल</div>
+            {clauses.map((c,i)=>(
+              <div key={i} style={{display:"flex",gap:"8px",marginBottom:"8px",alignItems:"flex-start"}}>
+                <div style={{flex:1,background:T.inp,border:`1px solid ${T.bdr}`,borderRadius:"8px",
+                  padding:"8px 12px",fontSize:"12px",color:T.cream,lineHeight:1.7}}>
+                  <span style={{color:T.gold,fontSize:"10px"}}>अट {i+1}: </span>{c}
+                </div>
+                <button onClick={()=>setClauses(clauses.filter((_,j)=>j!==i))}
+                  style={{background:T.red,color:T.redL,border:"none",borderRadius:"6px",
+                    padding:"6px 10px",cursor:"pointer",fontSize:"14px",flexShrink:0}}>✕</button>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:"8px",marginTop:"8px"}}>
+              <Inp value={newC} onChange={e=>setNewC(e.target.value)} multiline
+                placeholder="उदा: वाहनावरील सर्व देणी विक्रेत्याने भरावीत / भाड्याची रक्कम दर महिन्याच्या ५ तारखेला द्यावी..."/>
+              <Btn onClick={()=>{if(newC.trim()){setClauses([...clauses,newC.trim()]);setNewC("")}}}
+                style={{alignSelf:"flex-start",padding:"8px 14px",flexShrink:0}}>
+                + जोडा
+              </Btn>
+            </div>
+          </div>
+          <div style={{textAlign:"center",paddingBottom:"30px"}}>
+            <Btn onClick={generate} disabled={loading} style={{padding:"14px 36px",fontSize:"15px"}}>
+              {loading?"⏳ "+loadMsg:"⚡ दस्तावेज़ तयार करा"}
+            </Btn>
+            {loading&&<div style={{color:T.dim,fontSize:"11px",marginTop:"8px",animation:"pulse 1.5s infinite"}}>AI लिहित आहे... कृपया प्रतीक्षा करा</div>}
+            {err&&<div style={{color:T.redL,fontSize:"12px",marginTop:"10px"}}>⚠️ {err}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PREVIEW ─────────────────────────────────────────────────────
+  if(step==="preview")return(
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:F,color:T.cream}}>
+      <div style={{background:T.surf,borderBottom:`1px solid ${T.bdr}`,padding:"12px 16px",
+        display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:10}}>
+        <Btn sec sm onClick={()=>setStep("fields")}>← संपादित करा</Btn>
+        <Btn sec sm onClick={generate} disabled={loading} style={{fontSize:"11px"}}>🔄 पुन्हा तयार करा</Btn>
+        <Btn sec sm onClick={()=>setStep("home")}>🏠 होम</Btn>
+        <div style={{flex:1}}/>
+        <div style={{color:T.dim,fontSize:"10px",textAlign:"right",lineHeight:1.6}}>
+          A4 स्टांप पेपर फॉर्मेट<br/>वरून 18.5cm रिकामे
+        </div>
+        <Btn onClick={printDoc} style={{padding:"10px 20px",fontSize:"13px"}}>
+          🖨️ प्रिंट / डाउनलोड
+        </Btn>
+      </div>
+      <div style={{maxWidth:"720px",margin:"0 auto",padding:"16px"}}>
+        <div style={{background:T.goldD,border:`1px solid ${T.gold}33`,borderRadius:"10px",
+          padding:"10px 16px",marginBottom:"14px",fontSize:"12px",color:T.cream+"bb",display:"flex",gap:"10px",alignItems:"center"}}>
+          <span style={{fontSize:"20px"}}>📄</span>
+          <span><b style={{color:T.gold}}>प्रिंट सेटिंग:</b> Margins=None • Scale=100% • Headers/Footers=Off • A4 स्टांप पेपर सरळ घाला — वरचे 18.5cm आपोआप रिकामे राहील</span>
+        </div>
+        <div style={{background:"#fffef9",borderRadius:"12px",padding:"24px 28px",
+          color:"#1a1a1a",fontFamily:F,fontSize:"13px",lineHeight:2.2,whiteSpace:"pre-wrap",
+          maxHeight:"72vh",overflowY:"auto",border:`1px solid ${T.bdr}`}}>
+          <div style={{background:"#f0e8d0",padding:"8px 16px",borderRadius:"6px",
+            marginBottom:"20px",fontSize:"10px",color:"#888",textAlign:"center",fontStyle:"italic"}}>
+            ↑ वरील 18.5 cm रिकामे — प्री-प्रिंटेड स्टांप पेपर (हे प्रिंटमध्ये दिसणार नाही) ↑
+          </div>
+          {docTxt}
+        </div>
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
